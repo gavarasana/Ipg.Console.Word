@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "Ipg.Console.Word": {
+      "commandName": "Project",
+      "commandLineArgs": "C:\\temp\\ipg\\facility1.docx"
+    }
+  }
+}
