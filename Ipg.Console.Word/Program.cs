@@ -34,7 +34,6 @@ try
 
 
         var tables = document.Tables;
-        int counter = 0;
         int totalTables = tables.Count;
 
         string? facilityName = tables[1].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
@@ -56,8 +55,8 @@ try
         {
             Dictionary<string, string> cptCodes = new();
             bool inclusiveCptsSpecified = false;
-            Paragraphs paragraphs = document.Paragraphs;
 
+            Paragraphs paragraphs = document.Paragraphs;
             foreach (Paragraph paragraph in paragraphs)
             {
                 if (paragraph.Range.Text.Contains(CAN_BILL_KEYWORD, StringComparison.CurrentCultureIgnoreCase))
@@ -113,6 +112,7 @@ finally
     Console.WriteLine("Press any key to exit");
     Console.ReadKey();
 }
+
 static Dictionary<string, string> GetCptCodes(char[] nonPrintableChars, Microsoft.Office.Interop.Word.Range cptTableRange)
 {
     Dictionary<string, string> cptCodes = new();
@@ -127,6 +127,7 @@ static Dictionary<string, string> GetCptCodes(char[] nonPrintableChars, Microsof
     return cptCodes;
 }
 
+// TO BE DELETED LATER
 
 //Console.WriteLine($"Facility Name: {facilityName}");
 //Console.WriteLine($"FacilityTaxId: {facilityTaxId}");
