@@ -5,10 +5,11 @@ const string CAN_BILL_KEYWORD = "which IPG can bill Health Plan for Covered Serv
 const string CSV_EXTENSION = ".csv";
 
 Application wordApp = null;
-Document document = null;
+
 var outputFile = Path.Combine(Path.GetTempPath(), string.Concat(Path.GetFileNameWithoutExtension(Path.GetRandomFileName()), CSV_EXTENSION));
 try
 {
+    Console.WriteLine("Started processing....");
     char[] nonPrintableChars = new char[] { '\r', '\n', '\a' };
 
     var folderPath = args[0];
@@ -25,84 +26,96 @@ try
 
     wordApp = new Application();
 
-    var files = Directory.GetFiles(folderPath, "*.docx");
-    foreach (var file in files)
+    List<string> filesToProcess = new();
+
+    filesToProcess.AddRange(Directory.GetFiles(folderPath, "*.docx"));
+    filesToProcess.AddRange(Directory.GetFiles(folderPath, "*.doc"));
+        
+    if (filesToProcess.Count == 0)
     {
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine($"Processing file {file}");
-        document = wordApp.Documents.Open(FileName: file, Visible: false, ReadOnly: true);
+        Console.WriteLine("No files found");
+    }
 
-
-        var tables = document.Tables;
-        int totalTables = tables.Count;
-
-        string? facilityName = tables[1].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
-        string? facilityTaxId = tables[1].Range.Cells[6].Range.Text.Trim(nonPrintableChars);
-
-        string? carrierName = tables[3].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
-        bool allCptsInclusive = !string.IsNullOrEmpty(tables[4].Range.Cells[6].Range.Text.Trim(nonPrintableChars));
-        string? effectiveDate = tables[totalTables].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
-
-        // No need to get CPT codes, since all CPT codes are included
-        if (allCptsInclusive)
+    foreach (var file in filesToProcess)
+    {
+        Document document = null;
+        try
         {
-            using (StreamWriter csvFile = new StreamWriter(outputFile, true))
+            
+            Console.WriteLine($"Processing file {file}");
+            document = wordApp.Documents.Open(FileName: file, Visible: false, ReadOnly: true, ConfirmConversions: false);
+
+            var tables = document.Tables;
+            int totalTables = tables.Count;
+
+            string? facilityName = tables[1].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
+            string? facilityTaxId = tables[1].Range.Cells[6].Range.Text.Trim(nonPrintableChars);
+
+            string? carrierName = tables[3].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
+            bool allCptsInclusive = !string.IsNullOrEmpty(tables[4].Range.Cells[6].Range.Text.Trim(nonPrintableChars));
+            string? effectiveDate = tables[totalTables].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
+
+            // No need to get CPT codes, since all CPT codes are included
+            if (allCptsInclusive)
             {
+                using StreamWriter csvFile = new StreamWriter(outputFile, true);
                 csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|All||Included|{effectiveDate}");
             }
-        }
-        else
+            else
+            {
+                Dictionary<string, string> cptCodes = new();
+                bool inclusiveCptsSpecified = false;
+
+                Paragraphs paragraphs = document.Paragraphs;
+                foreach (Paragraph paragraph in paragraphs)
+                {
+                    if (paragraph.Range.Text.Contains(CAN_BILL_KEYWORD, StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        inclusiveCptsSpecified = true;
+                        break;
+                    }
+                }
+
+                if (inclusiveCptsSpecified)
+                {
+                    cptCodes = GetCptCodes(nonPrintableChars, tables[5].Range);
+                    using StreamWriter csvFile = new(outputFile, true);
+                    foreach (var cptCode in cptCodes)
+                    {
+                        csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|{cptCode.Key}|{cptCode.Value}|Included|{effectiveDate}");
+                    }
+                }
+
+                // Inclusive CPT codes not found. Lets get exclusive CPT codes.
+                // In some word documents, there is only one table, which could either be inclusive or exclusive.
+                if (cptCodes.Count == 0)
+                {
+                    Microsoft.Office.Interop.Word.Range excludeCptTableRange = (totalTables > 8) ? tables[6].Range : tables[5].Range;
+                    cptCodes = GetCptCodes(nonPrintableChars, excludeCptTableRange);
+                    using StreamWriter csvFile = new(outputFile, true);
+                    foreach (var cptCode in cptCodes)
+                    {
+                        csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|{cptCode.Key}|{cptCode.Value}|Excluded|{effectiveDate}");
+                    }
+                }
+            }
+        } catch (Exception ex)
         {
-            Dictionary<string, string> cptCodes = new();
-            bool inclusiveCptsSpecified = false;
-
-            Paragraphs paragraphs = document.Paragraphs;
-            foreach (Paragraph paragraph in paragraphs)
-            {
-                if (paragraph.Range.Text.Contains(CAN_BILL_KEYWORD, StringComparison.CurrentCultureIgnoreCase))
-                {
-                    inclusiveCptsSpecified = true;
-                    break;
-                }
-            }
-
-            if (inclusiveCptsSpecified)
-            {
-                cptCodes = GetCptCodes(nonPrintableChars, tables[5].Range);
-                using StreamWriter csvFile = new(outputFile, true);
-                foreach (var cptCode in cptCodes)
-                {
-                    csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|{cptCode.Key}|{cptCode.Value}|Included|{effectiveDate}");
-                }
-            }
-
-            // Inclusive CPT codes not found. Lets get exclusive CPT codes.
-            // In some word documents, there is only one table, which could either be inclusive or exclusive.
-            if (cptCodes.Count == 0)
-            {
-                Microsoft.Office.Interop.Word.Range excludeCptTableRange = (totalTables > 8) ? tables[6].Range : tables[5].Range;
-                cptCodes = GetCptCodes(nonPrintableChars, excludeCptTableRange);
-                using StreamWriter csvFile = new(outputFile, true);
-                foreach (var cptCode in cptCodes)
-                {
-                    csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|{cptCode.Key}|{cptCode.Value}|Excluded|{effectiveDate}");
-                }
-            }
+            Console.WriteLine($"Error: {ex.Message}");
         }
-
-        // Close word document
-        document.Close();
-        document = null;
+        finally { 
+            // Close word document
+            document?.Close();
+            document = null;
+        }
     }
 }
 catch (Exception ex)
 {
-    Console.WriteLine(ex.Message);
+    Console.WriteLine($"Error: {ex.Message}");
 }
 finally
 {
-    document?.Close();
-    document = null;
     wordApp?.Quit();
     wordApp = null;
     var originalColor = Console.ForegroundColor;
