@@ -1,137 +1,210 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using Microsoft.Office.Interop.Word;
 
+const string CAN_BILL_KEYWORD = "which IPG can bill Health Plan for Covered Services";
+const string CSV_EXTENSION = ".csv";
 
 Application wordApp = null;
-Document document = null;
+
+var outputFile = Path.Combine(Path.GetTempPath(), string.Concat(Path.GetFileNameWithoutExtension(Path.GetRandomFileName()), CSV_EXTENSION));
 try
 {
-    Console.WriteLine("Hello, World!");
-    var fileToOpen = args[0];
-    if (!File.Exists(fileToOpen))
+    Console.WriteLine("Started processing....");
+    char[] nonPrintableChars = new char[] { '\r', '\n', '\a' };
+
+    var folderPath = args[0];
+    if (!Directory.Exists(folderPath))
     {
-        Console.WriteLine("Please provide a valid word document path");
+        Console.WriteLine("Please provide a valid folder path");
         return;
     }
+
+    using (StreamWriter csvFile = new StreamWriter(outputFile, true))
+    {
+        csvFile.WriteLine("Facility Name|Facility TaxId|Carrier Name|CPT Codes|CPT Desc|CPT Included or Excluded|Effective Date");
+    }
+
     wordApp = new Application();
-    document = wordApp.Documents.Open(FileName: fileToOpen, Visible: false, ReadOnly: true);
-    /*
-    Console.WriteLine(document.Paragraphs.Count);
-    var paragraphs = document.Paragraphs;
-    var i = 0;
-    foreach (Paragraph paragraph in paragraphs)
-    {
-        Console.WriteLine($"Para {++i}: \n {paragraph.Range.Text}\n");
-    }
-    */
-    var tables = document.Tables;
-    int counter = 0;
 
-    Console.WriteLine($"Total tables: {tables.Count}");
-    foreach (Table wordTable in tables)
-    {
+    List<string> filesToProcess = new();
 
-        Console.WriteLine($"{++counter}) Table Id: {wordTable.Title}\t Total Columns: {wordTable.Columns.Count}\t Total Rows: {wordTable.Rows.Count}");
-
-        Microsoft.Office.Interop.Word.Range range = wordTable.Range;
-        for (int i = 1; i <= range.Cells.Count; i++)
-        {
-            Console.WriteLine($"{i}  - {range.Cells[i].Range.Text}");
-        }
-    }
-    Console.WriteLine("------------------------------------------------------------");
-
-    string? facilityName = tables[1].Range.Cells[4].Range.Text;
-    string? facilityTaxId = tables[1].Range.Cells[6].Range.Text;
-    bool facilityAdd = !string.IsNullOrEmpty(tables[2].Range.Cells[6].Range.Text);
-    string? carrierName = tables[3].Range.Cells[4].Range.Text;
-    bool allCptsInclusive = !string.IsNullOrEmpty(tables[4].Range.Cells[6].Range.Text);
-    List<string> inclusiveCptCodes = new();
-
-    Console.WriteLine($"Facility Name: {facilityName}");
-    Console.WriteLine($"FacilityTaxId: {facilityTaxId}");
-    Console.WriteLine($"Facility Add?: {facilityAdd}");
-    Console.WriteLine($"Carrier Name: {carrierName}");
-    Console.WriteLine($"All CPTs: {allCptsInclusive}");
-
-   
-
-    if (!allCptsInclusive)
-    {
-        Table cptCodesTable = tables[5];
-
-        Microsoft.Office.Interop.Word.Range cptTableRange = cptCodesTable.Range;
-        for (int i = 3; i <= cptTableRange.Cells.Count; i = i + 2)
-        {
-            var cptCode = cptTableRange.Cells[i].Range.Text.Trim();
-            if (!string.IsNullOrEmpty(cptCode)) inclusiveCptCodes.Add(cptCode);
-
-        }
-        Console.WriteLine("Inclusive CPTs");
-        foreach (var cptCode in inclusiveCptCodes)
-        {
-            Console.Write($"{cptCode}\t");
-        }
-
-        List<string> exclusiveCptCodes = new();
-        Table exclusiveCptCodesTable = tables[6];
-
-        Microsoft.Office.Interop.Word.Range exclusiveCptCodesTableRange = exclusiveCptCodesTable.Range;
-        for (int i = 3; i <= exclusiveCptCodesTableRange.Cells.Count; i = i + 2)
-        {
-            var cptCode = exclusiveCptCodesTableRange.Cells[i].Range.Text.Trim();
-            if (!string.IsNullOrEmpty(cptCode)) exclusiveCptCodes.Add(cptCode);
-
-        }
-        Console.WriteLine("Exclusive CPTs");
-        foreach (var cptCode in exclusiveCptCodes)
-        {
-            Console.Write($"{cptCode}\t");
-        }
-    }
-    /*
-    foreach (Table wordTable in tables)
-    {
+    filesToProcess.AddRange(Directory.GetFiles(folderPath, "*.docx"));
+    filesToProcess.AddRange(Directory.GetFiles(folderPath, "*.doc"));
         
-        Console.WriteLine($"{++counter}) Table Id: {wordTable.Title}\t Total Columns: {wordTable.Columns.Count}\t Total Rows: {wordTable.Rows.Count}");
+    if (filesToProcess.Count == 0)
+    {
+        Console.WriteLine("No files found");
+    }
 
-        Microsoft.Office.Interop.Word.Range range = wordTable.Range;
-        for (int i = 1; i <= range.Cells.Count; i++)
+    foreach (var file in filesToProcess)
+    {
+        Document document = null;
+        try
         {
-            //Console.WriteLine($"{range.Cells[i].RowIndex} : {range.Cells[i].ColumnIndex} - {range.Cells[i].Range.Text}");
-            Console.WriteLine($"{i}  - {range.Cells[i].Range.Text}");
-
             
-            if (range.Cells[i].RowIndex == wordTable.Rows.Count)
+            Console.WriteLine($"Processing file {file}");
+            document = wordApp.Documents.Open(FileName: file, Visible: false, ReadOnly: true, ConfirmConversions: false);
+
+            var tables = document.Tables;
+            int totalTables = tables.Count;
+
+            string? facilityName = tables[1].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
+            string? facilityTaxId = tables[1].Range.Cells[6].Range.Text.Trim(nonPrintableChars);
+
+            string? carrierName = tables[3].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
+            bool allCptsInclusive = !string.IsNullOrEmpty(tables[4].Range.Cells[6].Range.Text.Trim(nonPrintableChars));
+            string? effectiveDate = tables[totalTables].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
+
+            // No need to get CPT codes, since all CPT codes are included
+            if (allCptsInclusive)
             {
-                //range.Cells[i].Range.Text = range.Cells[i].RowIndex + ":" + range.Cells[i].ColumnIndex;
-                Console.WriteLine(range.Cells[i].Range.Text);
+                using StreamWriter csvFile = new StreamWriter(outputFile, true);
+                csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|All||Included|{effectiveDate}");
             }
-            
+            else
+            {
+                Dictionary<string, string> cptCodes = new();
+                bool inclusiveCptsSpecified = false;
+
+                Paragraphs paragraphs = document.Paragraphs;
+                foreach (Paragraph paragraph in paragraphs)
+                {
+                    if (paragraph.Range.Text.Contains(CAN_BILL_KEYWORD, StringComparison.CurrentCultureIgnoreCase))
+                    {
+                        inclusiveCptsSpecified = true;
+                        break;
+                    }
+                }
+
+                if (inclusiveCptsSpecified)
+                {
+                    cptCodes = GetCptCodes(nonPrintableChars, tables[5].Range);
+                    using StreamWriter csvFile = new(outputFile, true);
+                    foreach (var cptCode in cptCodes)
+                    {
+                        csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|{cptCode.Key}|{cptCode.Value}|Included|{effectiveDate}");
+                    }
+                }
+
+                // Inclusive CPT codes not found. Lets get exclusive CPT codes.
+                // In some word documents, there is only one table, which could either be inclusive or exclusive.
+                if (cptCodes.Count == 0)
+                {
+                    Microsoft.Office.Interop.Word.Range excludeCptTableRange = (totalTables > 8) ? tables[6].Range : tables[5].Range;
+                    cptCodes = GetCptCodes(nonPrintableChars, excludeCptTableRange);
+                    using StreamWriter csvFile = new(outputFile, true);
+                    foreach (var cptCode in cptCodes)
+                    {
+                        csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|{cptCode.Key}|{cptCode.Value}|Excluded|{effectiveDate}");
+                    }
+                }
+            }
+        } catch (Exception ex)
+        {
+            Console.WriteLine($"Error: {ex.Message}");
         }
-
-        
-        ////foreach (Row tableRow in wordTable.Rows)
-        ////{
-           
-        ////    foreach (Cell wordCell in tableRow.Cells)
-        ////    {
-        ////        //Console.Write($"Text: {wordCell.Range.Text}\t");
-        ////        Console.Write($"{wordCell.Row.Range.Text}\t");
-        ////    }
-        ////    Console.WriteLine("-----");
-        ////}
-
-        
-
+        finally { 
+            // Close word document
+            document?.Close();
+            document = null;
+        }
     }
-    */
 }
 catch (Exception ex)
 {
-    Console.WriteLine(ex.Message);
+    Console.WriteLine($"Error: {ex.Message}");
 }
-document?.Close();
-Console.WriteLine("Closing application");
-wordApp?.Quit();
+finally
+{
+    wordApp?.Quit();
+    wordApp = null;
+    var originalColor = Console.ForegroundColor;
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine($"Please check outputfile {outputFile} for results");
+    Console.ForegroundColor = originalColor;
+    Console.WriteLine("Press any key to exit");
+    Console.ReadKey();
+}
 
+static Dictionary<string, string> GetCptCodes(char[] nonPrintableChars, Microsoft.Office.Interop.Word.Range cptTableRange)
+{
+    Dictionary<string, string> cptCodes = new();
+
+    for (int i = 3; i <= cptTableRange.Cells.Count; i += 2)
+    {
+        var cptCode = cptTableRange.Cells[i].Range.Text.Trim(nonPrintableChars);
+        var cptDescription = cptTableRange.Cells[i + 1].Range.Text.Trim(nonPrintableChars);
+        if (!string.IsNullOrEmpty(cptCode) && !cptCodes.ContainsKey(cptCode)) cptCodes.Add(cptCode, cptDescription);
+
+    }
+    return cptCodes;
+}
+
+// TO BE DELETED LATER
+
+//Console.WriteLine($"Facility Name: {facilityName}");
+//Console.WriteLine($"FacilityTaxId: {facilityTaxId}");
+//Console.WriteLine($"Facility Add?: {facilityAdd}");
+//Console.WriteLine($"Carrier Name: {carrierName}");
+//Console.WriteLine($"All CPTs: {allCptsInclusive}");
+//Console.WriteLine($"Effective Date: {effectiveDate}");
+//foreach (Table wordTable in tables)
+//{
+
+//    Console.WriteLine($"{++counter}) Table Id: {wordTable.Title}\t Total Columns: {wordTable.Columns.Count}\t Total Rows: {wordTable.Rows.Count}");
+
+//    Microsoft.Office.Interop.Word.Range range = wordTable.Range;
+//    for (int i = 1; i <= range.Cells.Count; i++)
+//    {
+//        Console.WriteLine($"{i}  - {range.Cells[i].Range.Text}");
+//    }
+//}
+//Console.WriteLine("------------------------------------------------------------");
+
+////Console.WriteLine(document.Paragraphs.Count);
+//      //var paragraphs = document.Paragraphs;
+//      //var i = 0;
+//      //foreach (Paragraph paragraph in paragraphs)
+//      //{
+//      //    Console.WriteLine($"Para {++i}: \n {paragraph.Range.Text}\n");
+//      //}
+
+
+
+//      foreach (Table wordTable in tables)
+//      {
+
+//          Console.WriteLine($"{++counter}) Table Id: {wordTable.Title}\t Total Columns: {wordTable.Columns.Count}\t Total Rows: {wordTable.Rows.Count}");
+
+//          Microsoft.Office.Interop.Word.Range range = wordTable.Range;
+//          for (int i = 1; i <= range.Cells.Count; i++)
+//          {
+//              //Console.WriteLine($"{range.Cells[i].RowIndex} : {range.Cells[i].ColumnIndex} - {range.Cells[i].Range.Text}");
+//              Console.WriteLine($"{i}  - {range.Cells[i].Range.Text}");
+
+
+//              if (range.Cells[i].RowIndex == wordTable.Rows.Count)
+//              {
+//                  //range.Cells[i].Range.Text = range.Cells[i].RowIndex + ":" + range.Cells[i].ColumnIndex;
+//                  Console.WriteLine(range.Cells[i].Range.Text);
+//              }
+
+//          }
+
+
+//          ////foreach (Row tableRow in wordTable.Rows)
+//          ////{
+
+//          ////    foreach (Cell wordCell in tableRow.Cells)
+//          ////    {
+//          ////        //Console.Write($"Text: {wordCell.Range.Text}\t");
+//          ////        Console.Write($"{wordCell.Row.Range.Text}\t");
+//          ////    }
+//          ////    Console.WriteLine("-----");
+//          ////}
+
+
+
+//      }
+
+//bool facilityAdd = !string.IsNullOrEmpty(tables[2].Range.Cells[6].Range.Text.Trim(nonPrintableChars));
