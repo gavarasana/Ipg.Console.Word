@@ -1,10 +1,8 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using Microsoft.Office.Interop.Word;
-using System.Reflection.Emit;
 
 const string CAN_BILL_KEYWORD = "which IPG can bill Health Plan for Covered Services";
 const string CSV_EXTENSION = ".csv";
-
 
 Application wordApp = null;
 Document document = null;
@@ -39,34 +37,12 @@ try
         int counter = 0;
         int totalTables = tables.Count;
 
-        Console.WriteLine($"Total tables: {tables.Count}");
-        //foreach (Table wordTable in tables)
-        //{
-
-        //    Console.WriteLine($"{++counter}) Table Id: {wordTable.Title}\t Total Columns: {wordTable.Columns.Count}\t Total Rows: {wordTable.Rows.Count}");
-
-        //    Microsoft.Office.Interop.Word.Range range = wordTable.Range;
-        //    for (int i = 1; i <= range.Cells.Count; i++)
-        //    {
-        //        Console.WriteLine($"{i}  - {range.Cells[i].Range.Text}");
-        //    }
-        //}
-        //Console.WriteLine("------------------------------------------------------------");
-
         string? facilityName = tables[1].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
         string? facilityTaxId = tables[1].Range.Cells[6].Range.Text.Trim(nonPrintableChars);
-        bool facilityAdd = !string.IsNullOrEmpty(tables[2].Range.Cells[6].Range.Text.Trim(nonPrintableChars));
+
         string? carrierName = tables[3].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
         bool allCptsInclusive = !string.IsNullOrEmpty(tables[4].Range.Cells[6].Range.Text.Trim(nonPrintableChars));
         string? effectiveDate = tables[totalTables].Range.Cells[4].Range.Text.Trim(nonPrintableChars);
-
-
-        //Console.WriteLine($"Facility Name: {facilityName}");
-        //Console.WriteLine($"FacilityTaxId: {facilityTaxId}");
-        //Console.WriteLine($"Facility Add?: {facilityAdd}");
-        //Console.WriteLine($"Carrier Name: {carrierName}");
-        //Console.WriteLine($"All CPTs: {allCptsInclusive}");
-        //Console.WriteLine($"Effective Date: {effectiveDate}");
 
         // No need to get CPT codes, since all CPT codes are included
         if (allCptsInclusive)
@@ -84,7 +60,7 @@ try
 
             foreach (Paragraph paragraph in paragraphs)
             {
-                if (paragraph.Range.Text.Contains(CAN_BILL_KEYWORD))
+                if (paragraph.Range.Text.Contains(CAN_BILL_KEYWORD, StringComparison.CurrentCultureIgnoreCase))
                 {
                     inclusiveCptsSpecified = true;
                     break;
@@ -94,10 +70,9 @@ try
             if (inclusiveCptsSpecified)
             {
                 cptCodes = GetCptCodes(nonPrintableChars, tables[5].Range);
-                using StreamWriter csvFile = new StreamWriter(outputFile, true);
+                using StreamWriter csvFile = new(outputFile, true);
                 foreach (var cptCode in cptCodes)
                 {
-                    //Console.WriteLine($"{cptCode.Key} - {cptCode.Value}");
                     csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|{cptCode.Key}|{cptCode.Value}|Included|{effectiveDate}");
                 }
             }
@@ -108,11 +83,9 @@ try
             {
                 Microsoft.Office.Interop.Word.Range excludeCptTableRange = (totalTables > 8) ? tables[6].Range : tables[5].Range;
                 cptCodes = GetCptCodes(nonPrintableChars, excludeCptTableRange);
-                Console.WriteLine("Exclusive CPTs");
-                using StreamWriter csvFile = new StreamWriter(outputFile, true);
+                using StreamWriter csvFile = new(outputFile, true);
                 foreach (var cptCode in cptCodes)
                 {
-                   // Console.WriteLine($"{cptCode.Key} - {cptCode.Value}");
                     csvFile.WriteLine($"{facilityName}|{facilityTaxId}|{carrierName}|{cptCode.Key}|{cptCode.Value}|Excluded|{effectiveDate}");
                 }
             }
@@ -137,14 +110,14 @@ finally
     Console.ForegroundColor = ConsoleColor.Green;
     Console.WriteLine($"Please check outputfile {outputFile} for results");
     Console.ForegroundColor = originalColor;
-    Console.WriteLine("Press any key to exit");    
+    Console.WriteLine("Press any key to exit");
     Console.ReadKey();
 }
 static Dictionary<string, string> GetCptCodes(char[] nonPrintableChars, Microsoft.Office.Interop.Word.Range cptTableRange)
 {
     Dictionary<string, string> cptCodes = new();
 
-    for (int i = 3; i <= cptTableRange.Cells.Count; i = i + 2)
+    for (int i = 3; i <= cptTableRange.Cells.Count; i += 2)
     {
         var cptCode = cptTableRange.Cells[i].Range.Text.Trim(nonPrintableChars);
         var cptDescription = cptTableRange.Cells[i + 1].Range.Text.Trim(nonPrintableChars);
@@ -155,8 +128,24 @@ static Dictionary<string, string> GetCptCodes(char[] nonPrintableChars, Microsof
 }
 
 
+//Console.WriteLine($"Facility Name: {facilityName}");
+//Console.WriteLine($"FacilityTaxId: {facilityTaxId}");
+//Console.WriteLine($"Facility Add?: {facilityAdd}");
+//Console.WriteLine($"Carrier Name: {carrierName}");
+//Console.WriteLine($"All CPTs: {allCptsInclusive}");
+//Console.WriteLine($"Effective Date: {effectiveDate}");
+//foreach (Table wordTable in tables)
+//{
 
+//    Console.WriteLine($"{++counter}) Table Id: {wordTable.Title}\t Total Columns: {wordTable.Columns.Count}\t Total Rows: {wordTable.Rows.Count}");
 
+//    Microsoft.Office.Interop.Word.Range range = wordTable.Range;
+//    for (int i = 1; i <= range.Cells.Count; i++)
+//    {
+//        Console.WriteLine($"{i}  - {range.Cells[i].Range.Text}");
+//    }
+//}
+//Console.WriteLine("------------------------------------------------------------");
 
 ////Console.WriteLine(document.Paragraphs.Count);
 //      //var paragraphs = document.Paragraphs;
@@ -204,3 +193,4 @@ static Dictionary<string, string> GetCptCodes(char[] nonPrintableChars, Microsof
 
 //      }
 
+//bool facilityAdd = !string.IsNullOrEmpty(tables[2].Range.Cells[6].Range.Text.Trim(nonPrintableChars));
